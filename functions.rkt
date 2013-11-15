@@ -605,4 +605,238 @@ Already defined and trivial
 
 ; Chapter 8: Lambda the Ultimate
 
+(define rember-f
+  (lambda (test? a l)
+    (cond
+      ((null? l) '())
+      ((test? (car l) a) (cdr l))
+      (else (cons (car l)
+                  (rember-f test? a (cdr l)))))))
 
+(define eq?-c
+  (lambda (a)
+    (lambda (x)
+      (eq? a x))))
+
+; Higher-order function version
+(define rember-f
+  (lambda (test?)
+    (lambda (a l)
+      (cond
+        ((null? l) '())
+        ((test? (car l) a) (cdr l))
+        (else (cons (car l)
+                    ((rember-f test?) a (cdr l))))))))
+
+(define insertL-f
+  (lambda (test?)
+    (lambda (new old l)
+      (cond
+        ((null? l) '())
+        ((test? (car l) old)
+            (cons new (cons old (cdr l))))
+        (else
+            (cons (car l) ((insertL-f test?) new old (cdr l))))))))
+
+(define insertR-f
+  (lambda (test?)
+    (lambda (new old l)
+      (cond
+        ((null? l) '())
+        ((test? (car l) old)
+            (cons old (cons new (cdr l))))
+        (else
+            (cons (car l) ((insertL-f test?) new old (cdr l))))))))
+
+(define seqL
+  (lambda (new old l)
+    (cons new (cons old l))))
+
+(define seqR
+  (lambda (new old l)
+    (cons old (cons new l))))
+
+
+;; The book "cheats" here a bit by fixing test? to eq? again
+;; I'm still using test? to create a more general insert-g
+(define insert-g
+  (lambda (seq)
+    (lambda (test?)
+      (lambda (new old l)
+        (cond
+          ((null? l) '())
+          ((test? (car l) old)
+            (seq new old (cdr l)))
+          (else
+            (cons (car l) (((insert-g seq) test?) new old (cdr l)))))))))
+
+(define insertL
+  (lambda (test?)
+    ((insert-g 
+        (lambda (new old l) (cons new (cons old l)))) 
+      test?))) 
+
+(define insertR
+  (lambda (test?)
+    ((insert-g
+        (lambda (new old l) (cons old (cons new l))))
+     test?)))
+
+(define subst
+  (lambda (test?)
+    ((insert-g
+        (lambda (new old l) (cons new l)))
+     test?)))
+
+(define rember-new-version
+  (lambda (a l)
+    (((insert-g
+        (lambda (new old l) l)) 
+     eq?) #f a l)))
+
+; Above showed us how to abstract common patterns with a new function
+
+; Now we will re-write value from chapter 6
+
+(define atom-to-function
+  (lambda (x)
+    (cond
+      ((eq? x (quote +)) +)
+      ((eq? x (quote x)) *)
+      (else expt))))
+
+(define value
+  (lambda (nexp)
+    (cond
+      ((atom? nexp) nexp)
+      (else
+        ((atom-to-function (operator nexp))
+         (value (1st-sub-exp nexp))
+         (value (2nd-sub-exp nexp)))))))
+
+(define multirember-f
+  (lambda (test?)
+    (lambda (a lat)
+      (cond
+        ((null? lat) '())
+        ((test? a (car lat)) ((multirember-f test?) a (cdr lat)))
+        (else (cons (car lat) 
+                    (multirember a (cdr lat))))))))
+
+(define multirember-eq?
+  (multirember-f eq?)) 
+
+(define eq?-tuna
+  (eq?-c 'tuna))
+
+(define multiremberT
+  (lambda (test? lat)
+    (cond
+      ((null? lat) '())
+      ((test? (car lat)) (multiremberT test? (cdr lat)))
+      (else (cons (car lat)
+                  (multiremberT test? (cdr lat)))))))
+
+
+;; Collectors are next
+
+; This compares a to each element of lat
+; All the elements that are not equal to a end up in a list
+; all the elements that are equal end up in a second list
+; then the col function is called on these 2 lists
+(define multirember&co
+  (lambda (a lat col)
+    (cond
+      ((null? lat) (col '() '()))
+      ((eq? (car lat) a) 
+          (multirember&co a
+            (cdr lat)
+            (lambda (newlat seen)
+              (col newlat
+                (cons (car lat) seen)))))
+      (else 
+          (multirember&co a
+            (cdr lat)
+            (lambda (newlat seen)
+              (col 
+                (cons (car lat) newlat)
+                seen)))))))
+
+(define a-friend
+  (lambda (x y)
+    (null? y)))
+
+(define multiinsertLR 
+  (lambda (new oldL oldR lat)
+    (cond
+      ((null? lat) '())
+      ((eq? (car lat) oldL) 
+        (cons new (cons oldL (multiinsertLR new oldL oldR (cdr lat)))))
+      ((eq? (car lat) oldR) 
+        (cons oldR (cons new (multiinsertLR new oldL oldR (cdr lat)))))
+      (else
+        (cons (car lat) (multiinsertLR new oldL oldR (cdr lat)))))))
+
+(define multiinsertLR&co
+  (lambda (new oldL oldR lat col)
+    (cond
+      ((null? lat) (col '() 0 0))
+      ((eq? (car lat) oldL)
+        (multiinsertLR&co new oldL oldR (cdr lat)
+          (lambda (newlat L R)
+            (col (cons new (cons oldL newlat)) (add1 L) R))))
+      ((eq? (car lat) oldR)
+        (multiinsertLR&co new oldL oldR (cdr lat)
+          (lambda (newlat L R)
+            (col (cons oldR (cons new newlat)) L (add1 R)))))
+      (else
+        (multiinsertLR&co new oldL oldR (cdr lat)
+          (lambda (newlat L R)
+            (col (cons (car lat) newlat) L R)))))))
+
+(define even?
+  (lambda (n)
+    (= (* (quotient n 2) 2) n)))
+
+(define evens-only*
+  (lambda (l)
+    (cond
+      ((null? l) '())
+      ((atom? (car l))
+        (cond
+          ((even? (car l))
+            (cons (car l) (evens-only* (cdr l))))
+          (else 
+            (evens-only* (cdr l)))))
+      (else
+        (cons (evens-only* (car l)) (evens-only* (cdr l)))))))
+
+(define evens-only*&co
+  (lambda (l col)
+    (cond
+      ((null? l) (col '() 1 0))
+      ((atom? (car l))
+        (cond
+          ((even? (car l))
+            (evens-only*&co (cdr l)
+                (lambda (newl product sum)
+                  (col (cons (car l) newl) (* product (car l)) sum))))
+          (else
+            (evens-only*&co (cdr l)
+                (lambda (newl product sum)
+                  (col newl product (+ sum (car l))))))))
+      (else
+        (evens-only*&co (car l)
+          (lambda (al ap as)
+            (evens-only*&co (cdr l)
+              (lambda (dl dp ds)
+                (col (cons al dl)
+                  (* ap dp)
+                  (+ as ds))))))))))
+
+(define the-last-friend
+  (lambda (newl product sum)
+    (cons sum
+      (cons product newl))))
+            
+            
